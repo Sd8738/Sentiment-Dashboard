@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Sentiment Watchdog</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #4f46e5, #d946ef);
+            color: #e0e7ff;
+        }
+        .glass-card {
+            background-color: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .apexcharts-tooltip {
+            background: #1e293b !important;
+            color: #ffffff !important;
+            border: 1px solid #334155 !important;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #a78bfa;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c084fc;
+        }
+        .stat-value {
+            transition: color 0.5s ease;
+        }
+        .heatmap-cell {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .heatmap-cell:hover, .heatmap-cell.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(255,255,255,0.2);
+        }
+        .nav-link.active {
+            background-color: rgba(79, 70, 229, 0.3);
+            color: #ffffff;
+        }
+        .keyword-tag {
+            transition: all 0.2s ease;
+        }
+        .keyword-tag:hover {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+        }
+        .sortable-header {
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        .sortable-header:hover {
+            color: #a78bfa;
+        }
+        .table-row:hover {
+            background-color: rgba(255,255,255,0.05);
+        }
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="overflow-hidden">
+    <div class="flex flex-col h-screen">
+        <!-- Header -->
+        <header class="glass-card m-4 mb-0 p-4 flex items-center justify-between z-10 flex-shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="text-2xl font-bold text-violet-300 flex items-center justify-center h-10 w-10 bg-violet-500/20 rounded-lg">A</div>
+                <h1 class="text-2xl font-bold text-white" data-translate="dashboard_title">Sentiment Dashboard</h1>
+                <nav class="hidden md:flex items-center gap-2">
+                    <a href="#" class="nav-link px-3 py-2 text-sm font-semibold text-violet-200 rounded-md active" data-page="dashboard" data-translate="nav_live_dashboard">Live Dashboard</a>
+                    <a href="#" class="nav-link px-3 py-2 text-sm font-semibold text-violet-300 hover:bg-violet-500/20 rounded-md" data-page="analytics" data-translate="nav_analytics_deep_dive">Analytics Deep Dive</a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-4">
+                 <div class="relative">
+                    <select id="language-switcher" class="bg-slate-800/50 border border-slate-600 text-violet-200 text-sm rounded-lg focus:ring-violet-500 focus:border-violet-500 block w-full p-2">
+                        <option value="en">English</option>
+                        <option value="hi">हिन्दी (Hindi)</option>
+                        <option value="mr">मराठी (Marathi)</option>
+                    </select>
+                </div>
+                <button class="text-violet-300 hover:bg-violet-500/20 p-2 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+                </button>
+                <button id="create-account-btn" class="text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg">Create Account</button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 min-h-0 p-4 pt-4 overflow-y-auto">
+            <!-- Page 1: Live Dashboard -->
+            <main id="dashboard-page" class="page-content grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 flex flex-col gap-6 min-h-0">
+                    <div id="real-time-feeds" class="flex-1 glass-card p-6 fade-in min-h-0">
+                        <h2 class="text-2xl font-bold mb-4 text-white" data-translate="real_time_platform_feeds">Real-Time Platform Feeds</h2>
+                        <div id="live-inbox-feed" class="overflow-y-auto h-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-4 pr-2"></div>
+                    </div>
+                </div>
+                <div class="lg:col-span-1 flex flex-col gap-6 min-h-0">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="glass-card p-4 flex flex-col justify-center items-center"><h3 class="text-md font-semibold text-slate-300" data-translate="msgs_min">Msgs/Min</h3><p id="mpm-stat" class="text-3xl font-bold stat-value text-white">0</p></div>
+                        <div class="glass-card p-4 flex flex-col justify-center items-center"><h3 class="text-md font-semibold text-slate-300" data-translate="pos_neg_ratio">Pos/Neg Ratio</h3><p id="ratio-stat" class="text-3xl font-bold stat-value text-white">N/A</p></div>
+                        <div class="glass-card p-4 flex flex-col justify-center items-center"><h3 class="text-md font-semibold text-slate-300" data-translate="top_platform">Top Platform</h3><p id="active-platform-stat" class="text-3xl font-bold stat-value text-white">-</p></div>
+                    </div>
+                    <div id="sentiment-trend-card" class="glass-card p-6 fade-in"><h2 class="text-xl font-bold mb-4 text-white" data-translate="overall_sentiment_trend">Overall Sentiment Trend</h2><div id="trend-chart" class="h-48"></div></div>
+                    <div id="heatmap-card" class="glass-card p-6 fade-in"><h2 class="text-xl font-bold mb-4 text-white" data-translate="sentiment_heatmap">Sentiment Heatmap</h2><div id="heatmap-grid" class="grid grid-cols-3 gap-2"></div></div>
+                    <div id="alerts-card" class="flex-1 glass-card p-6 fade-in min-h-0"><h2 class="text-xl font-bold mb-4 text-white" data-translate="alerts">Alerts</h2><div id="alerts-feed" class="overflow-y-auto h-full space-y-3"><p class="text-slate-400" data-translate="no_new_alerts">No new alerts.</p></div></div>
+                </div>
+            </main>
+
+            <!-- Page 2: Analytics Deep Dive -->
+            <main id="analytics-page" class="page-content p-6 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="glass-card p-6"><h2 class="text-2xl font-bold mb-4 text-white" data-translate="historical_sentiment_breakdown">Historical Sentiment Breakdown</h2><div id="historical-chart" class="h-80"></div></div>
+                    <div class="glass-card p-6"><h2 class="text-2xl font-bold mb-4 text-white" data-translate="platform_performance">Platform Performance</h2><div id="platform-table" class="overflow-y-auto h-80"></div></div>
+                    <div class="glass-card p-6"><h2 class="text-2xl font-bold mb-4 text-white" data-translate="top_positive_keywords">Top Positive Keywords</h2><div id="positive-keywords" class="flex flex-wrap gap-2"></div></div>
+                    <div class="glass-card p-6"><h2 class="text-2xl font-bold mb-4 text-white" data-translate="top_negative_keywords">Top Negative Keywords</h2><div id="negative-keywords" class="flex flex-wrap gap-2"></div></div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Create Account Modal -->
+    <div id="account-modal" class="fixed inset-0 z-50 items-center justify-center hidden">
+        <div class="modal-overlay absolute inset-0"></div>
+        <div class="glass-card w-full max-w-md p-8 relative mx-auto my-12">
+            <button id="close-modal-btn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <h2 class="text-2xl font-bold mb-6 text-white">Create New Account</h2>
+            <form id="account-form">
+                <div class="space-y-4">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-slate-300">Full Name</label>
+                        <input type="text" id="name" class="mt-1 block w-full px-3 py-2 bg-slate-800/50 border border-slate-600 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-violet-500 focus:border-violet-500" placeholder="John Doe" required>
+                    </div>
+                    <div>
+                        <label for="email" class="block text-sm font-medium text-slate-300">Email Address</label>
+                        <input type="email" id="email" class="mt-1 block w-full px-3 py-2 bg-slate-800/50 border border-slate-600 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-violet-500 focus:border-violet-500" placeholder="you@example.com" required>
+                    </div>
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-slate-300">Password</label>
+                        <input type="password" id="password" class="mt-1 block w-full px-3 py-2 bg-slate-800/50 border border-slate-600 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-violet-500 focus:border-violet-500" placeholder="••••••••" required>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <button type="submit" class="w-full bg-violet-600 text-white py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500">Create Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA SIMULATION & CONFIG ---
+        const sources = {
+            Twitter: { icon: '🐦' }, Amazon: { icon: '📦' }, Instagram: { icon: '📸' },
+            'Google Playstore': { icon: '▶️' }, Google: { icon: '🇬' }, Reddit: { icon: '🤖' },
+        };
+
+        const emotions = {
+            Anger: { emoji: '😠', color: '#ef4444', keywords: { en: ['unacceptable', 'worst', 'terrible'], hi: ['अस्वीकार्य', 'सबसे खराब', 'भयानक'], mr: ['अस्वीकार्य', 'सर्वात वाईट', 'भयानक'] } },
+            Frustration: { emoji: '😤', color: '#f97316', keywords: { en: ['frustrating', 'annoying', 'broken', 'stuck'], hi: ['निराशाजनक', 'परेशान करने वाला', 'टूटा हुआ', 'अटक गया'], mr: ['निराशाजनक', 'त्रासदायक', 'तुटलेले', 'अडकले'] } },
+            Happy: { emoji: '😊', color: '#22c55e', keywords: { en: ['great', 'love it', 'perfect', 'amazing'], hi: ['बढ़िया', 'बहुत पसंद है', 'उत्तम', 'अद्भुत'], mr: ['उत्तम', 'खूप आवडले', 'परिपूर्ण', 'अप्रतिम'] } },
+            Sad: { emoji: '😢', color: '#3b82f6', keywords: { en: ['sad', 'unhappy', 'crying'], hi: ['दुखी', 'नाखुश', 'रो रहा है'], mr: ['दुःखी', 'नाखूष', 'रडत आहे'] } },
+            Disappointment: { emoji: '😞', color: '#f59e0b', keywords: { en: ['disappointed', 'bad quality', 'let down'], hi: ['निराश', 'खराब गुणवत्ता', 'निराश किया'], mr: ['निराश', 'खराब गुणवत्ता', 'निराश केले'] } },
+            Confusion: { emoji: '🤔', color: '#a855f7', keywords: { en: ['confused', 'how do I', 'where is'], hi: ['उलझन में', 'मैं कैसे करूं', 'कहाँ है'], mr: ['गोंधळलेला', 'मी कसे करू', 'कुठे आहे'] } },
+            Excitement: { emoji: '🤩', color: '#ec4899', keywords: { en: ['excited', 'can\'t wait', 'looking forward'], hi: ['उत्साहित', 'इंतजार नहीं कर सकता', 'आगे देख रहा हूँ'], mr: ['उत्साहित', 'वाट पाहू शकत नाही', 'उत्सुक आहे'] } },
+            Delight: { emoji: '😄', color: '#84cc16', keywords: { en: ['delightful', 'wonderful', 'excellent'], hi: ['आनंददायक', 'अद्भुत', 'उत्कृष्ट'], mr: ['आनंददायक', 'अद्भुत', 'उत्कृष्ट'] } },
+            Joy: { emoji: '😂', color: '#14b8a6', keywords: { en: ['joyful', 'hilarious', 'made my day'], hi: ['आनंदपूर्ण', 'हास्यास्पद', 'मेरा दिन बना दिया'], mr: ['आनंददायक', 'हास्यास्पद', 'माझा दिवस बनवला'] } }
+        };
+        
+        const sampleMessages = [
+            // English
+            { lang: 'en', text: "Why is customer service so slow to respond? Frustrating!" }, { lang: 'en', text: "This is the worst product I have ever bought. So bad." },
+            { lang: 'en', text: "Five stars! This vacuum cleaner is a game-changer for my home." }, { lang: 'en', text: "The product arrived damaged. Very disappointed with the packaging." },
+            { lang: 'en', text: "I'm so excited to receive my order tomorrow!" }, { lang: 'en', text: "This is hilarious, your marketing is top-notch!" },
+            { lang: 'en', text: "A truly delightful unboxing experience, thank you!" }, { lang: 'en', text: "I'm a bit sad that the item I wanted is out of stock." },
+            { lang: 'en', text: "Your app is amazing and so easy to use." }, { lang: 'en', text: "Completely unacceptable, I demand a refund immediately." },
+
+            // Hindi
+            { lang: 'hi', text: "यह उत्पाद बढ़िया है, मुझे यह बहुत पसंद है!" }, { lang: 'hi', text: "उत्पाद टूटा हुआ आया। कितना निराशाजनक है।" },
+            { lang: 'hi', text: "मैं उलझन में हूँ, यह कैसे काम करता है?" }, { lang: 'hi', text: "यह ऐप अद्भुत है, बहुत उपयोगी है।" },
+            { lang: 'hi', text: "ग्राहक सेवा बहुत धीमी है, यह निराशाजनक है।" }, { lang: 'hi', text: "मैं बहुत दुखी हूँ, मुझे गलत आइटम मिला।" },
+            { lang: 'hi', text: "यह एक उत्कृष्ट उत्पाद है, पूरी तरह से संतुष्ट हूँ।" }, { lang: 'hi', text: "मेरा ऑर्डर अभी तक नहीं आया, यह अस्वीकार्य है।" },
+            { lang: 'hi', text: "वाह! क्या शानदार पैकेजिंग है, बहुत आनंददायक।" }, { lang: 'hi', text: "मैं अपने पैकेज के लिए बहुत उत्साहित हूँ!" },
+
+            // Marathi
+            { lang: 'mr', text: "हे अस्वीकार्य आहे! सेवा खूप वाईट आहे." }, { lang: 'mr', text: "मी गुणवत्तेमुळे खूप निराश झालो आहे." },
+            { lang: 'mr', text: "उत्कृष्ट! मला हे उत्पादन खूप आवडले." }, { lang: 'mr', text: "मी खूप दुःखी आहे, मला चुकीची वस्तू मिळाली." },
+            { lang: 'mr', text: "ग्राहक समर्थन खूप उपयुक्त आणि मैत्रीपूर्ण होते." }, { lang: 'mr', text: "हे ॲप वापरण्यास खूप सोपे आहे, उत्तम काम!" },
+            { lang: 'mr', text: "मी गोंधळलो आहे, मला मदत हवी आहे." }, { lang: 'mr', text: "तुमचे उत्पादन तुटलेले आले, हे निराशाजनक आहे." },
+            { lang: 'mr', text: "मी माझ्या ऑर्डरची आतुरतेने वाट पाहत आहे!" }, { lang: 'mr', text: "हे एक आनंददायक आश्चर्य होते, धन्यवाद!" }
+        ];
+
+        const translations = {
+            en: {
+                dashboard_title: "Sentiment Dashboard", nav_live_dashboard: "Live Dashboard", nav_analytics_deep_dive: "Analytics Deep Dive",
+                real_time_platform_feeds: "Real-Time Platform Feeds", msgs_min: "Msgs/Min", pos_neg_ratio: "Pos/Neg Ratio", top_platform: "Top Platform",
+                overall_sentiment_trend: "Overall Sentiment Trend", sentiment_heatmap: "Sentiment Heatmap", alerts: "Alerts", no_new_alerts: "No new alerts.",
+                historical_sentiment_breakdown: "Historical Sentiment Breakdown", platform_performance: "Platform Performance",
+                top_positive_keywords: "Top Positive Keywords", top_negative_keywords: "Top Negative Keywords",
+                platform: "Platform", messages: "Messages", sentiment_score: "Sentiment Score"
+            },
+            hi: {
+                dashboard_title: "सेंटीमेंट डैशबोर्ड", nav_live_dashboard: "लाइव डैशबोर्ड", nav_analytics_deep_dive: "एनालिटिक्स डीप डाइव",
+                real_time_platform_feeds: "रियल-टाइम प्लेटफॉर्म फीड्स", msgs_min: "संदेश/मिनट", pos_neg_ratio: "सकारात्मक/नकारात्मक अनुपात", top_platform: "शीर्ष प्लेटफॉर्म",
+                overall_sentiment_trend: "समग्र सेंटीमेंट ट्रेंड", sentiment_heatmap: "सेंटीमेंट हीटमैप", alerts: "अलर्ट", no_new_alerts: "कोई नया अलर्ट नहीं।",
+                historical_sentiment_breakdown: "ऐतिहासिक सेंटीमेंट ब्रेकडाउन", platform_performance: "प्लेटफॉर्म प्रदर्शन",
+                top_positive_keywords: "शीर्ष सकारात्मक कीवर्ड", top_negative_keywords: "शीर्ष नकारात्मक कीवर्ड",
+                platform: "प्लेटफार्म", messages: "संदेश", sentiment_score: "सेंटीमेंट स्कोर"
+            },
+            mr: {
+                dashboard_title: "सेंटिमेंट डॅशबोर्ड", nav_live_dashboard: "लाइव्ह डॅशबोर्ड", nav_analytics_deep_dive: "ॲनालिटिक्स डीप डाइव्ह",
+                real_time_platform_feeds: "रिअल-टाइम प्लॅटफॉर्म फीड्स", msgs_min: "संदेश/मिनिट", pos_neg_ratio: "सकारात्मक/नकारात्मक गुणोत्तर", top_platform: "शीर्ष प्लॅटफॉर्म",
+                overall_sentiment_trend: "एकूण सेंटिमेंट ट्रेंड", sentiment_heatmap: "सेंटिमेंट हीटमॅप", alerts: "अलर्ट", no_new_alerts: "नवीन अलर्ट नाहीत.",
+                historical_sentiment_breakdown: "ऐतिहासिक सेंटिमेंट ब्रेकडाउन", platform_performance: "प्लॅटफॉर्म कामगिरी",
+                top_positive_keywords: "शीर्ष सकारात्मक कीवर्ड", top_negative_keywords: "शीर्ष नकारात्मक कीवर्ड",
+                platform: "प्लॅटफॉर्म", messages: "संदेश", sentiment_score: "सेंटिमेंट स्कोअर"
+            }
+        };
+
+        let messageId = 0;
+        let alerts = [];
+        let liveMessagesBySource = {};
+        let messageTimestamps = [];
+        let activeFilter = null;
+        let historicalData = {};
+        let currentLang = 'en';
+        let analyticsInterval = null;
+
+        // --- UI COMPONENTS & TEMPLATES ---
+        const createPlatformCardHTML = (source) => `<div id="feed-card-${source.replace(/\s+/g, '-')}" class="glass-card p-4 border-t-4" style="border-top-color: rgba(255,255,255,0.2);"><h3 class="font-bold text-lg mb-2 text-white">${source}</h3><div class="space-y-2 message-list"></div></div>`;
+        const createMessageHTML = (msg) => `<div class="text-sm border-b border-slate-700/50 pb-2"><p class="text-slate-300">${msg.lang !== 'en' ? `🇮🇳 (${msg.lang.toUpperCase()}): ` : ''}"${msg.text}"</p><p class="font-semibold mt-1" style="color: ${emotions[msg.emotion].color};">${msg.emotion} ${emotions[msg.emotion].emoji}</p></div>`;
+
+        // --- CHARTING & VISUALIZATION ---
+        let trendChart, historicalChart;
+
+        const initCharts = () => {
+            try {
+                const trendEl = document.querySelector("#trend-chart");
+                if (trendEl && !trendChart) {
+                    trendChart = new ApexCharts(trendEl, { chart: { type: 'area', height: '100%', toolbar: { show: false } }, series: [{ name: 'Positive', data: [] }, { name: 'Negative', data: [] }, { name: 'Confusion', data: [] }, { name: 'Frustration', data: [] }], colors: ['#22c55e', '#ef4444', '#a855f7', '#f97316'], theme: { mode: 'dark' }, dataLabels: { enabled: false }, stroke: { curve: 'smooth', width: 3 }, fill: { type: "gradient", gradient: { shade: 'dark', type: 'vertical', opacityFrom: 0.7, opacityTo: 0.1 } }, xaxis: { type: 'datetime', labels: { style: { colors: '#94a3b8' } }, axisBorder: { show: false }, axisTicks: { show: false }, range: 300000 }, yaxis: { labels: { style: { colors: '#94a3b8' } }, min: 0 }, grid: { borderColor: 'rgba(255, 255, 255, 0.1)' }, legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: '#e0e7ff' } }, tooltip: { theme: 'dark' } });
+                    trendChart.render();
+                }
+            } catch (e) { console.error("Error initializing trend chart:", e); }
+        };
+        
+        const initAnalyticsCharts = () => {
+             try {
+                const historicalEl = document.querySelector("#historical-chart");
+                if (historicalEl) {
+                    if (historicalChart) historicalChart.destroy();
+                    historicalChart = new ApexCharts(historicalEl, { 
+                        chart: { 
+                            type: 'bar', 
+                            height: '100%', 
+                            toolbar: { show: false },
+                            events: {
+                                dataPointSelection: (event, chartContext, config) => {
+                                    const selectedEmotion = config.w.globals.labels[config.dataPointIndex];
+                                    renderKeywordClouds(selectedEmotion);
+                                }
+                            }
+                        }, 
+                        series: [{ name: 'Messages', data: Object.values(historicalData.emotionCounts) }], 
+                        xaxis: { categories: Object.keys(historicalData.emotionCounts), labels: { style: { colors: '#e0e7ff' } } }, 
+                        yaxis: { labels: { style: { colors: '#e0e7ff' } } },
+                        colors: Object.keys(historicalData.emotionCounts).map(emotion => emotions[emotion].color), 
+                        theme: { mode: 'dark' }, 
+                        plotOptions: { bar: { distributed: true, borderRadius: 4, } }, 
+                        legend: { show: false }, 
+                        tooltip: { theme: 'dark' } 
+                    });
+                    historicalChart.render();
+                }
+            } catch (e) { console.error("Error initializing historical chart:", e); }
+        };
+
+        // --- APPLICATION LOGIC ---
+        const getEmotionFromText = (lang, text) => {
+            const lowerText = text.toLowerCase();
+            for (const [emotion, data] of Object.entries(emotions)) {
+                if (data.keywords[lang]?.some(keyword => lowerText.includes(keyword))) return emotion;
+            }
+            return 'Happy';
+        };
+
+        const generateRandomMessage = () => {
+            const source = Object.keys(sources)[Math.floor(Math.random() * Object.keys(sources).length)];
+            const msgData = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+            const emotion = getEmotionFromText(msgData.lang, msgData.text);
+            return { id: ++messageId, source, ...msgData, emotion };
+        };
+
+        const addMessageToFeed = (msg) => {
+            const feedContainer = document.getElementById('live-inbox-feed');
+            if (!feedContainer) return;
+            const sourceCardId = `feed-card-${msg.source.replace(/\s+/g, '-')}`;
+            let sourceCard = document.getElementById(sourceCardId);
+
+            if (!sourceCard) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = createPlatformCardHTML(msg.source).trim();
+                sourceCard = tempDiv.firstChild;
+                if (!sourceCard) return;
+                feedContainer.prepend(sourceCard);
+            }
+            
+            sourceCard.style.display = (activeFilter && activeFilter !== msg.source) ? 'none' : 'block';
+
+            const messageList = sourceCard.querySelector('.message-list');
+            if (!messageList) return;
+            
+            const msgEl = document.createElement('div');
+            msgEl.innerHTML = createMessageHTML(msg).trim();
+            const messageElement = msgEl.firstChild;
+            if (messageElement) {
+                gsap.from(messageElement, { opacity: 0, x: -20, duration: 0.5, ease: 'power3.out' });
+                messageList.prepend(messageElement);
+            }
+            if (messageList.children.length > 10) {
+                gsap.to(messageList.lastChild, { opacity: 0, duration: 0.5, onComplete: () => messageList.lastChild.remove() });
+            }
+        };
+        
+        const updateLiveStats = () => {
+            const now = Date.now();
+            messageTimestamps = messageTimestamps.filter(ts => now - ts < 60000);
+            const mpm = messageTimestamps.length;
+            const mpmStatEl = document.getElementById('mpm-stat');
+            if (mpmStatEl) mpmStatEl.textContent = mpm;
+
+            const allMessages = Object.values(liveMessagesBySource).flat();
+            const positiveCount = allMessages.filter(m => ['Happy', 'Delight', 'Joy', 'Excitement'].includes(m.emotion)).length;
+            const negativeCount = allMessages.filter(m => ['Anger', 'Sad', 'Disappointment', 'Frustration'].includes(m.emotion)).length;
+            const ratioStatEl = document.getElementById('ratio-stat');
+            if(ratioStatEl) {
+                const ratio = negativeCount > 0 ? (positiveCount / negativeCount).toFixed(1) : positiveCount;
+                ratioStatEl.textContent = `${ratio}:1`;
+                ratioStatEl.style.color = ratio >= 1 ? '#22c55e' : '#ef4444';
+            }
+
+            const platformCounts = Object.entries(liveMessagesBySource).map(([source, messages]) => ({ source, count: messages.length }));
+            const activePlatformStatEl = document.getElementById('active-platform-stat');
+            if(activePlatformStatEl && platformCounts.length > 0) {
+                const mostActive = platformCounts.sort((a,b) => b.count - a.count)[0];
+                activePlatformStatEl.textContent = mostActive.source;
+            }
+        };
+
+        const updateHeatmap = () => {
+            const heatmapGrid = document.getElementById('heatmap-grid');
+            if(!heatmapGrid) return;
+            heatmapGrid.innerHTML = '';
+            
+            Object.keys(sources).forEach(source => {
+                const messages = liveMessagesBySource[source] || [];
+                const positiveCount = messages.filter(m => ['Happy', 'Delight', 'Joy'].includes(m.emotion)).length;
+                const negativeCount = messages.filter(m => ['Anger', 'Sad', 'Disappointment', 'Frustration'].includes(m.emotion)).length;
+                let bgColor = 'rgba(255, 255, 255, 0.1)';
+                if (positiveCount > negativeCount) bgColor = `rgba(34, 197, 94, ${0.2 + (positiveCount * 0.15)})`;
+                else if (negativeCount > positiveCount) bgColor = `rgba(239, 68, 68, ${0.2 + (negativeCount * 0.15)})`;
+
+                const cell = document.createElement('div');
+                cell.className = `heatmap-cell text-center p-2 rounded-md text-sm font-semibold text-white ${activeFilter === source ? 'active' : ''}`;
+                cell.style.backgroundColor = bgColor;
+                cell.textContent = source;
+                cell.dataset.source = source;
+                heatmapGrid.appendChild(cell);
+            });
+        };
+
+        const updateDashboard = () => {
+            if (trendChart) {
+                const now = new Date().getTime();
+                const allMessages = Object.values(liveMessagesBySource).flat();
+                const positiveCount = allMessages.filter(m => ['Happy', 'Delight', 'Joy'].includes(m.emotion)).length;
+                const negativeCount = allMessages.filter(m => ['Anger', 'Sad', 'Disappointment'].includes(m.emotion)).length;
+                const confusionCount = allMessages.filter(m => m.emotion === 'Confusion').length;
+                const frustrationCount = allMessages.filter(m => m.emotion === 'Frustration').length;
+                trendChart.appendData([ { data: [[now, positiveCount]] }, { data: [[now, negativeCount]] }, { data: [[now, confusionCount]] }, { data: [[now, frustrationCount]] } ]);
+            }
+            updateLiveStats();
+            updateHeatmap();
+        };
+
+        const updateAlertsCenter = () => {
+            const alertsFeed = document.getElementById('alerts-feed');
+            if (!alertsFeed) return;
+            alertsFeed.innerHTML = alerts.length === 0 ? `<p class="text-slate-400">${translations[currentLang].no_new_alerts}</p>` : alerts.map(alert => `<div class="p-3 rounded-lg bg-slate-800/50 border-l-4 border-red-500"><p class="font-semibold text-red-400">${alert.message}</p><p class="text-sm text-slate-400">${alert.time}</p></div>`).join('');
+        };
+        
+        const renderKeywordClouds = (filterEmotion = null) => {
+            const posKeywordsEl = document.getElementById('positive-keywords');
+            const negKeywordsEl = document.getElementById('negative-keywords');
+            if(!posKeywordsEl || !negKeywordsEl) return;
+
+            const positiveEmotions = ['Happy', 'Delight', 'Joy', 'Excitement'];
+            const negativeEmotions = ['Anger', 'Frustration', 'Sad', 'Disappointment'];
+
+            const getKeywords = (emotionList) => {
+                if (filterEmotion && !emotionList.includes(filterEmotion)) {
+                    return `<p class="text-slate-400">No keywords for this selection.</p>`;
+                }
+                const targetEmotions = filterEmotion ? [filterEmotion] : emotionList;
+                const keywords = targetEmotions.flatMap(emotion => {
+                    return emotions[emotion] ? Object.values(emotions[emotion].keywords).flat() : [];
+                });
+
+                if (keywords.length === 0) return `<p class="text-slate-400">No keywords for this selection.</p>`;
+
+                return [...new Set(keywords)].map(kw => `<span class="keyword-tag bg-slate-700/50 text-slate-200 text-sm font-medium me-2 px-2.5 py-0.5 rounded-full">${kw}</span>`).join('');
+            };
+
+            posKeywordsEl.innerHTML = getKeywords(positiveEmotions);
+            negKeywordsEl.innerHTML = getKeywords(negativeEmotions);
+        };
+
+        const populateAnalyticsPage = () => {
+            historicalData.emotionCounts = Object.keys(emotions).reduce((acc, emotion) => { acc[emotion] = Math.floor(Math.random() * 500); return acc; }, {});
+            historicalData.platformData = Object.keys(sources).map(source => ({
+                name: source,
+                messages: Math.floor(Math.random()*2000),
+                score: (Math.random()*5).toFixed(1)
+            }));
+
+            initAnalyticsCharts();
+            renderKeywordClouds();
+            
+            const platformTableEl = document.getElementById('platform-table');
+            if(platformTableEl) {
+                const renderTable = (data) => {
+                    platformTableEl.innerHTML = `<table class="w-full text-sm text-left text-slate-400">
+                        <thead class="text-xs text-slate-300 uppercase bg-slate-700/50"><tr>
+                            <th class="px-6 py-3 sortable-header" data-sort="name" data-translate="platform">Platform ↕️</th>
+                            <th class="px-6 py-3 sortable-header" data-sort="messages" data-translate="messages">Messages ↕️</th>
+                            <th class="px-6 py-3 sortable-header" data-sort="score" data-translate="sentiment_score">Sentiment Score ↕️</th>
+                        </tr></thead>
+                        <tbody>${data.map(d => `<tr class="border-b border-slate-700 table-row"><th class="px-6 py-4 font-medium text-white whitespace-nowrap">${d.name}</th><td class="px-6 py-4">${d.messages}</td><td class="px-6 py-4 font-bold ${d.score >= 2.5 ? 'text-green-400' : 'text-red-400'}">${d.score}/5.0</td></tr>`).join('')}</tbody>
+                    </table>`;
+                    translateUI(currentLang);
+                };
+                renderTable(historicalData.platformData);
+
+                platformTableEl.addEventListener('click', (e) => {
+                    const header = e.target.closest('.sortable-header');
+                    if(!header) return;
+                    const sortKey = header.dataset.sort;
+                    const isAsc = header.dataset.order === 'asc';
+                    historicalData.platformData.sort((a, b) => {
+                        if (a[sortKey] < b[sortKey]) return isAsc ? 1 : -1;
+                        if (a[sortKey] > b[sortKey]) return isAsc ? -1 : 1;
+                        return 0;
+                    });
+                    header.dataset.order = isAsc ? 'desc' : 'asc';
+                    renderTable(historicalData.platformData);
+                });
+            }
+        };
+
+        const realTimeLoop = () => {
+            try {
+                const newMessage = generateRandomMessage();
+                messageTimestamps.push(Date.now());
+                if (!liveMessagesBySource[newMessage.source]) liveMessagesBySource[newMessage.source] = [];
+                liveMessagesBySource[newMessage.source].unshift(newMessage);
+                if (liveMessagesBySource[newMessage.source].length > 20) liveMessagesBySource[newMessage.source].pop();
+                
+                const negativeEmotions = ['Anger', 'Disappointment', 'Sad', 'Frustration'];
+                if (negativeEmotions.includes(newMessage.emotion)) {
+                    const now = new Date();
+                    alerts.unshift({ type: 'spike', time: now.toLocaleTimeString(), message: `Negative Sentiment Spike: ${newMessage.emotion}!` });
+                    if(alerts.length > 20) alerts.pop();
+                    updateAlertsCenter();
+                }
+
+                addMessageToFeed(newMessage);
+                updateDashboard();
+            } catch (e) {
+                console.error("Error in realTimeLoop:", e);
+            } finally {
+                setTimeout(realTimeLoop, Math.random() * 2500 + 1500);
+            }
+        };
+
+        const translateUI = (lang) => {
+            currentLang = lang;
+            document.querySelectorAll('[data-translate]').forEach(el => {
+                const key = el.dataset.translate;
+                if (translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+        };
+
+        // --- INITIALIZATION & NAVIGATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const pages = document.querySelectorAll('.page-content');
+            const navLinks = document.querySelectorAll('.nav-link');
+            const modal = document.getElementById('account-modal');
+            const createAccountBtn = document.getElementById('create-account-btn');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const accountForm = document.getElementById('account-form');
+
+            const switchPage = (pageId) => {
+                if(analyticsInterval) clearInterval(analyticsInterval);
+
+                pages.forEach(p => p.classList.add('hidden'));
+                const newPage = document.getElementById(pageId);
+                if(newPage) newPage.classList.remove('hidden');
+
+                navLinks.forEach(l => l.classList.remove('active'));
+                const activeLink = document.querySelector(`.nav-link[data-page="${pageId.replace('-page','')}"]`);
+                if(activeLink) activeLink.classList.add('active');
+                
+                if (pageId === 'analytics-page') {
+                    populateAnalyticsPage();
+                    analyticsInterval = setInterval(populateAnalyticsPage, 10000);
+                } else {
+                    if (historicalChart) {
+                        historicalChart.destroy();
+                        historicalChart = null;
+                    }
+                }
+                 translateUI(currentLang);
+            };
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    switchPage(link.dataset.page + '-page');
+                });
+            });
+
+            document.getElementById('heatmap-grid').addEventListener('click', (e) => {
+                const cell = e.target.closest('.heatmap-cell');
+                if (!cell) return;
+                const source = cell.dataset.source;
+                
+                if (activeFilter === source) {
+                    activeFilter = null;
+                    cell.classList.remove('active');
+                } else {
+                    activeFilter = source;
+                    document.querySelectorAll('.heatmap-cell').forEach(c => c.classList.remove('active'));
+                    cell.classList.add('active');
+                }
+                
+                document.querySelectorAll('#live-inbox-feed > div').forEach(card => {
+                    card.style.display = (activeFilter && card.id !== `feed-card-${activeFilter.replace(/\s+/g, '-')}`) ? 'none' : 'block';
+                });
+            });
+            
+            document.getElementById('language-switcher').addEventListener('change', (e) => {
+                translateUI(e.target.value);
+            });
+            
+            // Modal Logic
+            const showModal = () => {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                gsap.from(modal.querySelector('.glass-card'), { opacity: 0, y: -20, duration: 0.3 });
+            };
+            const hideModal = () => {
+                gsap.to(modal.querySelector('.glass-card'), { opacity: 0, y: -20, duration: 0.3, onComplete: () => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }});
+            };
+
+            createAccountBtn.addEventListener('click', showModal);
+            closeModalBtn.addEventListener('click', hideModal);
+            modal.querySelector('.modal-overlay').addEventListener('click', hideModal);
+            accountForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const submitBtn = accountForm.querySelector('button');
+                submitBtn.textContent = 'Account Created!';
+                submitBtn.classList.remove('bg-violet-600', 'hover:bg-violet-700');
+                submitBtn.classList.add('bg-green-500');
+                setTimeout(() => {
+                    hideModal();
+                    submitBtn.textContent = 'Create Account';
+                    submitBtn.classList.add('bg-violet-600', 'hover:bg-violet-700');
+                    submitBtn.classList.remove('bg-green-500');
+                    accountForm.reset();
+                }, 1500);
+            });
+
+
+            initCharts();
+            realTimeLoop();
+        });
+    </script>
+</body>
+</html>
